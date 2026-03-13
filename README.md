@@ -1,37 +1,41 @@
-# Mini CRM - Extrator de Leads via OCR 🚀
+MultiZAP - Gestão Inteligente de Leads (Marco 0.6.0) 🚀
+O MultiZAP é uma solução SaaS focada em corretores de imóveis (como a Elite Imóveis) para transformar capturas de tela (prints) de conversas do WhatsApp em leads qualificados e organizados.
 
-Este projeto é um Mini CRM desenvolvido para corretores, focado na extração automática de dados de leads a partir de prints do WhatsApp utilizando OCR (Reconhecimento Óptico de Caracteres) e persistência em banco de dados.
+🌟 Funcionalidades Principais (v0.6.0)
+Visão Computacional com Gemini IA: O sistema utiliza o modelo gemini-1.5-flash para analisar imagens e extrair dados sem depender de padrões fixos de texto.
 
-📌 Status do Projeto: Marco 0.5.0 Concluído ✅
+Extração de Contexto Real: Capaz de identificar o nome do lead e o telefone mesmo quando estão escondidos no corpo da conversa, como no caso de números enviados manualmente.
 
-- [x] Configuração inicial do ambiente (FastAPI).
-- [x] Integração com Tesseract OCR.
-- [x] Rota de upload de imagem e extração de texto bruto.
-- [x] Inteligência de Extração (Nome, Telefone e Contexto da Mensagem) com RegEx.
-- [x] Persistência em Banco de Dados (SQLite).
-- [x] Sistema CRUD (Listagem, Edição e Exclusão de Leads).
-- [ ] Interface Web (Frontend).
+Scripts de Atendimento Automáticos: Gera uma saudação personalizada baseada no interesse do cliente (ex: sobrado no Xaxim) e na dúvida específica capturada (ex: metragem dos cômodos).
+
+Timestamp de Captura: Registro automático de data e hora para controle de SLA e frescor do lead.
+
+Interface Moderna: Painel desenvolvido com Tailwind CSS para uma experiência limpa e responsiva.
 
 🛠️ Tecnologias Utilizadas
-- Python 3.13
-- FastAPI (Backend)
-- Tesseract OCR (Motor de leitura)
-- SQLAlchemy (ORM para Banco de Dados)
-- SQLite (Banco de Dados local)
-- Pillow (Processamento de imagem)
+Backend: FastAPI (Python).
 
-🚀 Como Executar o Projeto
+IA Multimodal: Google Generative AI (Gemini API).
 
-1. Ative o ambiente virtual:
-   source backend/venv/Scripts/activate
+Banco de Dados: SQLite com SQLAlchemy.
 
-2. Inicie o servidor:
-   uvicorn backend.main:app --reload
+Frontend: HTML5, Tailwind CSS e JavaScript (Fetch API).
 
-3. Acesse a documentação interativa:
-   http://127.0.0.1:8000/docs
+📈 Evolução do Projeto (Changelog)
+Este projeto demonstra a transição de uma lógica baseada em regras para uma solução baseada em inteligência artificial:
 
-💡 Funcionalidades Atuais
-- Upload de Prints: O sistema identifica automaticamente o nome do lead (mesmo sem estar nos contatos), o telefone e o interesse principal na conversa.
-- Banco de Dados: Todos os leads processados são salvos com data e ID único.
-- Gestão de Dados: É possível corrigir nomes lidos incorretamente pelo OCR ou deletar registros via API.
+Marco 0.1.0 - 0.5.0 (OCR & Regex):
+
+Utilizava Tesseract/OCR tradicional para extração de texto bruto.
+
+Lógica baseada em expressões regulares (Regex) para tentar limpar dados "sujos".
+
+Limitação: Sofria com ruídos visuais do WhatsApp (símbolos, nomes de botões como "Bloquear" ou "Adicionar") e falhava em layouts variados.
+
+Marco 0.6.0 (IA Multimodal):
+
+Substituição completa do OCR/Regex pelo processamento visual do Gemini.
+
+Fim do "lixo" no banco de dados; a IA agora entende o que é interface e o que é dado relevante.
+
+Adição de geração de linguagem natural para scripts de vendas.
