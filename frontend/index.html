@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiZAP - Gestão Inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <nav class="bg-slate-800 text-white p-4 shadow-lg">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold italic">Multi<span class="text-green-400">ZAP</span></h1>
+            <span class="text-sm bg-green-500 px-2 py-1 rounded">Marco 0.6.0 SaaS</span>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+                <p class="text-gray-500 text-sm uppercase">Total de Leads</p>
+                <p class="text-2xl font-bold" id="total-leads">0</p>
+            </div>
+            <div class="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
+                <p class="text-gray-500 text-sm uppercase">Convertidos hoje</p>
+                <p class="text-2xl font-bold">--</p>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-lg font-semibold mb-4 text-gray-700">Capturar Novo Lead (Print do Whats)</h2>
+            <div class="flex items-center gap-4">
+                <input type="file" id="imageInput" class="border p-2 rounded w-full text-sm">
+                <button onclick="uploadImage()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition">
+                    Processar
+                </button>
+            </div>
+        </div>
+
+        <h2 class="text-xl font-bold mb-4 text-gray-800">Seus Leads Catalogados</h2>
+        <div id="leadsList" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            </div>
+    </div>
+
+    <script>
+        // Pego os leads salvos no banco e desenho os cards na tela
+        async function loadLeads() {
+            try {
+                const response = await fetch('http://127.0.0.1:8000/leads/');
+                const leads = await response.json();
+                const list = document.getElementById('leadsList');
+                document.getElementById('total-leads').innerText = leads.length;
+                list.innerHTML = '';
+
+                // Inverto a ordem pra mostrar os novos primeiro
+                leads.reverse().forEach(lead => {
+                    const msg = `Olá ${lead.nome}, vi seu interesse em: ${lead.mensagem}`;
+                    const waLink = `https://wa.me/${lead.telefone.replace(/\D/g,'')}?text=${encodeURIComponent(msg)}`;
+
+                    list.innerHTML += `
+                        <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200 hover:shadow-lg transition">
+                            <div class="flex justify-between items-start mb-3">
+                                <div>
+                                    <h3 class="font-bold text-lg text-gray-800">${lead.nome}</h3>
+                                    <p class="text-sm text-blue-600 font-medium">${lead.telefone}</p>
+                                </div>
+                                <span class="text-xs text-gray-400 font-mono">ID: ${lead.id.substring(0,8)}</span>
+                            </div>
+                            <p class="text-gray-600 text-sm mb-4 bg-gray-50 p-3 rounded border italic">
+                                "${lead.mensagem}"
+                            </p>
+                            <div class="flex gap-2">
+                                <a href="${waLink}" target="_blank" class="flex-1 bg-green-500 text-white text-center py-2 rounded-lg font-bold hover:bg-green-600 flex items-center justify-center gap-2">
+                                    <i class="fab fa-whatsapp"></i> Chamar
+                                </a>
+                                <button onclick="deleteLead('${lead.id}')" class="bg-red-50 text-red-500 px-4 py-2 rounded-lg hover:bg-red-100 transition border border-red-100">
+                                    <i class="fas fa-trash-alt"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+            } catch (error) {
+                console.error("Erro ao carregar a lista:", error);
+            }
+        }
+
+        // Mando o arquivo pro backend fazer o OCR e salvar o lead
+        async function uploadImage() {
+            const fileInput = document.getElementById('imageInput');
+            const btn = event.target;
+            
+            if (fileInput.files.length === 0) {
+                alert("Escolher um arquivo antes de processar.");
+                return;
+            }
+
+            // Travo o botão pra evitar cliques repetidos no processamento
+            const originalText = btn.innerText;
+            btn.innerText = "Processando...";
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            try {
+                const response = await fetch('http://127.0.0.1:8000/upload/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert("Lead capturado!");
+                    fileInput.value = ''; 
+                    loadLeads(); // Recarrego a lista automaticamente
+                } else {
+                    alert("Falha no servidor ao processar imagem.");
+                }
+            } catch (error) {
+                console.error("Erro no upload:", error);
+                alert("Servidor desconectado.");
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // Deleto o lead do banco quando o atendimento é finalizado
+        async function deleteLead(id) {
+            if (confirm("Remover este lead da lista?")) {
+                try {
+                    const response = await fetch(`http://127.0.0.1:8000/leads/${id}`, {
+                        method: 'DELETE'
+                    });
+                    if (response.ok) {
+                        loadLeads();
+                    }
+                } catch (error) {
+                    alert("Erro ao tentar excluir lead.");
+                }
+            }
+        }
+
+        // Inicializo a grade de leads
+        loadLeads();
+    </script>
+</body>
+</html>

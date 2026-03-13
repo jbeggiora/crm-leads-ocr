@@ -1,32 +1,45 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Optional, List
-import pytesseract
-from PIL import Image
-import uuid
-import io
-import re
-
-# --- CONFIGURAÇÃO DO BANCO DE DADOS ---
-from sqlalchemy import create_engine, Column, String, Text, DateTime
+import os
+import json
+import google.generativeai as genai
+from datetime import datetime
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import Column, String, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from datetime import datetime
+import uuid
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./leads.db"
+# --- CONFIGURAÇÃO IA ---
+# Pegue sua chave em: https://aistudio.google.com/
+genai.configure(api_key="SUA_CHAVE_AQUI")
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# --- BANCO DE DADOS ---
+SQLALCHEMY_DATABASE_URL = "sqlite:///./multizap.db"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class LeadDB(Base):
+class Lead(Base):
     __tablename__ = "leads"
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     nome = Column(String)
     telefone = Column(String)
     mensagem = Column(Text)
-    data_criacao = Column(DateTime, default=datetime.utcnow)
+    script_ia = Column(Text)
+    data_captura = Column(String)
 
 Base.metadata.create_all(bind=engine)
+
+# --- APP ---
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def get_db():
     db = SessionLocal()
@@ -35,81 +48,58 @@ def get_db():
     finally:
         db.close()
 
-# --- CONFIGURAÇÃO TESSERACT ---
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+@app.get("/leads/")
+def list_leads(db: Session = Depends(get_db)):
+    return db.query(Lead).all()
 
-# AQUI ESTÁ A LINHA QUE O SEU ERRO RECLAMOU:
-app = FastAPI()
+@app.delete("/leads/{lead_id}")
+def delete_lead(lead_id: str, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if lead:
+        db.delete(lead)
+        db.commit()
+    return {"status": "removido"}
 
-# --- MODELOS ---
-class LeadBase(BaseModel):
-    nome: Optional[str] = "Não identificado"
-    telefone: Optional[str] = "Não identificado"
-    mensagem: Optional[str] = None
+@app.post("/upload/")
+async function upload_image(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    temp_path = f"temp_{file.filename}"
+    with open(temp_path, "wb") as buffer:
+        buffer.write(await file.read())
 
-class LeadResponse(LeadBase):
-    id: str
-    data_creation: datetime = datetime.now() # Fallback simples
-    class Config:
-        from_attributes = True
-
-# --- INTELIGÊNCIA DE LIMPEZA ---
-def limpar_dados_ocr(texto):
-    padrao_tel = r'(\+?55\s?\d{2}\s?9?\d{4}-?\d{4})'
-    tel_match = re.search(padrao_tel, texto)
-    telefone = tel_match.group(0) if tel_match else "Não encontrado"
-
-    padrao_nome_til = r'~\s?(\w+)'
-    nome_match = re.search(padrao_nome_til, texto)
-    if nome_match:
-        nome = nome_match.group(1)
-    else:
-        padrao_contato = r'(\w+)\n+Não está nos seus contatos'
-        match_contato = re.search(padrao_contato, texto, re.IGNORECASE)
-        nome = match_contato.group(1) if match_contato else "Desconhecido"
-
-    linhas = texto.split('\n')
-    mensagens_relevantes = []
-    sujeira = ["contatos", "grupos", "iniciada", "compartilhamento", "atividades", "Gerenciar", "saudação", "Instagram", "detalhes"]
-
-    for linha in linhas:
-        ln = linha.strip()
-        if len(ln) > 10 and not any(s in ln for s in sujeira):
-            if telefone not in ln and nome not in ln:
-                mensagens_relevantes.append(ln)
-    
-    contexto = " | ".join(mensagens_relevantes) if mensagens_relevantes else "Sem contexto"
-    return nome, telefone, contexto
-
-# --- ROTAS ---
-@app.get("/")
-async def root():
-    return {"status": "Sistema Online"}
-
-@app.post("/upload-print/", response_model=LeadResponse)
-async def upload_print(file: UploadFile = File(...), db: Session = Depends(get_db)):
     try:
-        contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
-        texto_extraido = pytesseract.image_to_string(image, lang='por')
-        nome, telefone, contexto = limpar_dados_ocr(texto_extraido)
+        agora = datetime.now()
+        data_hora = agora.strftime("%d/%m/%Y às %H:%M")
 
-        novo_lead = LeadDB(id=str(uuid.uuid4()), nome=nome, telefone=telefone, mensagem=contexto)
+        # Prompt focado no seu negócio de Elite Imóveis
+        prompt = f"""
+        Analise este print de WhatsApp. Hoje é {data_hora}.
+        Extraia e retorne APENAS um JSON puro (sem markdown) com:
+        - "nome": Nome do lead.
+        - "telefone": Número de contato.
+        - "mensagem": Resumo do que ele quer ou anúncio clicado.
+        - "script_ia": Script de saudação: "Olá [nome], aqui é o Jonatas da Elite Imóveis. Vi seu interesse no [produto] e sua dúvida sobre [pergunta]. Vamos conversar?"
+        - "data_captura": "{data_hora}"
+        """
+
+        img_upload = genai.upload_file(temp_path)
+        response = model.generate_content([prompt, img_upload])
+        
+        dados_ia = json.loads(response.text.replace('```json', '').replace('```', '').strip())
+
+        novo_lead = Lead(
+            nome=dados_ia.get('nome', 'Desconhecido'),
+            telefone=dados_ia.get('telefone', 'Não encontrado'),
+            mensagem=dados_ia.get('mensagem', 'Sem contexto'),
+            script_ia=dados_ia.get('script_ia', ''),
+            data_captura=dados_ia.get('data_captura', data_hora)
+        )
         db.add(novo_lead)
         db.commit()
-        db.refresh(novo_lead)
-        return novo_lead
+
+        return {"status": "sucesso", "lead": novo_lead.nome}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/leads/", response_model=List[LeadResponse])
-async def listar_leads(db: Session = Depends(get_db)):
-    return db.query(LeadDB).all()
-
-@app.put("/leads/{lead_id}", response_model=LeadResponse)
-async def atualizar_lead(lead_id: str, dados: LeadBase, db: Session = Depends(get_db)):
-    lead = db.query(LeadDB).filter(LeadDB.id == lead_id).first()
-    if not lead: raise HTTPException(status_code=404)
-    lead.nome, lead.telefone, lead.mensagem = dados.nome, dados.telefone, dados.mensagem
-    db.commit()
-    return lead
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
